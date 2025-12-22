@@ -2,75 +2,70 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.RendererUtils;
 using UnityEngine.XR;
 
 public class VRRenderPipeline : RenderPipeline
 {
     public VRRenderPipelineAsset Settings;
 
-    private CullingResults CullResults;
 
-    private CommandBuffer CommandBuffer = new CommandBuffer() { name = "Init" };
+    private readonly CommandBuffer command;
 
     public VRRenderPipeline(VRRenderPipelineAsset settings)
     {
         Settings = settings;
+        command = new() { name = "Render" };
     }
 
-    protected override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
+    protected override void Render(ScriptableRenderContext context, Camera[] cameras)
     {
-        foreach (Camera cam in cameras)
+        foreach (var camera in cameras)
         {
-            Render(renderContext, cam);
-        }
-    }
+            if (!camera.TryGetCullingParameters(true, out var cullingParameters))
+                return;
 
-    public void Render(ScriptableRenderContext renderContext, Camera camera)
-    {
-        renderContext.SetupCameraProperties(camera, camera.stereoEnabled);
+            var cullingResults = context.Cull(ref cullingParameters);
+            context.SetupCameraProperties(camera, camera.stereoEnabled);
+            command.ClearRenderTarget(true, false, default);
 
-        if (camera.TryGetCullingParameters(true, out ScriptableCullingParameters cullingParameters) == false)
-        {
-            return;
-        }
-        CullResults = renderContext.Cull(ref cullingParameters);
+            if (camera.stereoEnabled)
+            {
+                if(SystemInfo.supportsMultiview)
+                    command.EnableShaderKeyword("STEREO_MULTIVIEW_ON");
+                else
+                {
+                    command.EnableShaderKeyword("STEREO_INSTANCING_ON");
+                    command.SetInstanceMultiplier(2u);
+                }
 
-        CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget, 0, CubemapFace.Unknown, -1);
+                context.StartMultiEye(camera);
+            }
 
-        if (camera.stereoEnabled)
-        {
-            CommandBuffer.SetSinglePassStereo(SinglePassStereoMode.Instancing);
-            renderContext.StartMultiEye(camera);
-        }
-        else
-        {
-            CommandBuffer.SetSinglePassStereo(SinglePassStereoMode.None);
-        }
+            command.DrawRendererList(context.CreateRendererList(new RendererListDesc(new ShaderTagId("SRPDefaultUnlit"), cullingResults, camera) { renderQueueRange = RenderQueueRange.opaque }));
+            command.DrawRendererList(context.CreateSkyboxRendererList(camera));
 
-        CommandBuffer.ClearRenderTarget(true, true, camera.backgroundColor, 1.0f);
-        renderContext.ExecuteCommandBuffer(CommandBuffer);
-        CommandBuffer.Clear();
+            if (camera.stereoEnabled)
+            {
+                if (SystemInfo.supportsMultiview)
+                    command.DisableShaderKeyword("STEREO_MULTIVIEW_ON");
+                else
+                {
+                    command.DisableShaderKeyword("STEREO_INSTANCING_ON");
+                    command.SetInstanceMultiplier(1u);
+                }
+            }
 
-        SortingSettings sortingSettings = new SortingSettings(camera);
-        sortingSettings.criteria = SortingCriteria.CommonOpaque;
+            context.ExecuteCommandBuffer(command);
+            command.Clear();
 
-        DrawingSettings drawSettings = new DrawingSettings(new ShaderTagId("SRPDefaultUnlit"), sortingSettings);
-        drawSettings.enableDynamicBatching = false;
-        drawSettings.enableInstancing = true;
-        drawSettings.sortingSettings = sortingSettings;
-        drawSettings.perObjectData = 0;
-        FilteringSettings filterSettings = new FilteringSettings(RenderQueueRange.opaque);
-        renderContext.DrawRenderers(CullResults, ref drawSettings, ref filterSettings);
-        renderContext.DrawSkybox(camera);
-        if (camera.stereoEnabled)
-        {
-            renderContext.StopMultiEye(camera);
+            if (camera.stereoEnabled)
+            {
+                context.StopMultiEye(camera);
+                context.StereoEndRender(camera);
+            }
         }
 
-        if (camera.stereoEnabled)
-        {
-            renderContext.StereoEndRender(camera);
-        }
-        renderContext.Submit();
+        context.Submit();
     }
 }
