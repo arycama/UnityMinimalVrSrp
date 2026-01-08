@@ -26,21 +26,7 @@ struct FragmentInput
 matrix unity_ObjectToWorld, unity_MatrixVP;
 
 #if defined(STEREO_INSTANCING_ON) || defined(STEREO_MULTIVIEW_ON)
-	cbuffer UnityStereoGlobals
-	{
-		matrix unity_StereoMatrixP[2];
-		matrix unity_StereoMatrixV[2];
-		matrix unity_StereoMatrixInvV[2];
-		matrix unity_StereoMatrixVP[2];
-
-		matrix unity_StereoCameraProjection[2];
-		matrix unity_StereoCameraInvProjection[2];
-		matrix unity_StereoWorldToCamera[2];
-		matrix unity_StereoCameraToWorld[2];
-
-		float3 unity_StereoWorldSpaceCameraPos[2];
-		float4 unity_StereoScaleOffset[2];
-	};
+	matrix WorldToClip[2];
 #endif
 
 #ifdef STEREO_MULTIVIEW_ON
@@ -59,10 +45,10 @@ FragmentInput Vertex(VertexInput input)
 	output.normal = input.normal;
 	
 	#ifdef STEREO_INSTANCING_ON
-		matrix worldToClip = unity_StereoMatrixVP[input.instanceId];
+		matrix worldToClip = WorldToClip[input.instanceId];
 		output.viewIndex = input.instanceId;
 	#elif defined(STEREO_MULTIVIEW_ON)
-		matrix worldToClip = unity_StereoMatrixVP[gl_ViewID];
+		matrix worldToClip = WorldToClip[gl_ViewID];
     #else
 		matrix worldToClip = unity_MatrixVP;
     #endif
@@ -73,7 +59,8 @@ FragmentInput Vertex(VertexInput input)
 
 float4 Fragment(FragmentInput input) : SV_Target
 {
-	float3 L = normalize(float3(0.8, 0.6, -0.2));
+	return float4(input.normal * 0.5 + 0.5, 1.0);
+	float3 L = normalize(float3(0.8, -0.6, 0.2));
 	float3 albedo = 0.75;
 	return float4(saturate(dot(input.normal, L) * albedo), 1.0);
 }

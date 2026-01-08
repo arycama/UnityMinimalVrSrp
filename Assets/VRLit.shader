@@ -4,6 +4,12 @@ Shader "VR Lit"
     {
         Pass
         {
+            Stencil
+            {
+                Ref 1
+                Pass Replace
+            }
+
             HLSLPROGRAM
             #pragma vertex Vertex
             #pragma fragment Fragment

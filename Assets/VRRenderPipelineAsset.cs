@@ -1,14 +1,16 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 [CreateAssetMenu(menuName = "VR Render Pipeline")]
 public class VRRenderPipelineAsset : RenderPipelineAsset
 {
+    public override Type pipelineType => typeof(VRRenderPipeline);
+
+    public override string renderPipelineShaderTag => string.Empty;
+
     protected override RenderPipeline CreatePipeline()
     {
-        VRRenderPipeline renderPipeline = new VRRenderPipeline(this);
-        return renderPipeline;
+        return new VRRenderPipeline();
     }
 }
