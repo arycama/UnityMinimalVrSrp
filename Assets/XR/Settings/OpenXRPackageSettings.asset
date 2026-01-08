@@ -195,9 +195,9 @@ MonoBehaviour:
   customLoaderName: 
   m_renderMode: 1
   m_latencyOptimization: 0
-  m_autoColorSubmissionMode: 0
+  m_autoColorSubmissionMode: 1
   m_colorSubmissionModes:
-    m_List: 0400000000000000
+    m_List: 010000000400000000000000
   m_depthSubmissionMode: 0
   m_spacewarpMotionVectorTextureFormat: 1
   m_optimizeBufferDiscards: 1
@@ -298,7 +298,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: feeef8d85de8db242bdda70cc7ff5acd, type: 3}
   m_Name: OculusTouchControllerProfile Android
   m_EditorClassIdentifier: Unity.XR.OpenXR::UnityEngine.XR.OpenXR.Features.Interactions.OculusTouchControllerProfile
-  m_enabled: 1
+  m_enabled: 0
   nameUi: Oculus Touch Controller Profile
   version: 0.0.1
   featureIdInternal: com.unity.openxr.feature.input.oculustouch
@@ -342,7 +342,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c4b862ee14fb479fbfe5fffe655d3ed3, type: 3}
   m_Name: MetaQuestTouchProControllerProfile Android
   m_EditorClassIdentifier: Unity.XR.OpenXR::UnityEngine.XR.OpenXR.Features.Interactions.MetaQuestTouchProControllerProfile
-  m_enabled: 1
+  m_enabled: 0
   nameUi: Meta Quest Touch Pro Controller Profile
   version: 0.0.1
   featureIdInternal: com.unity.openxr.feature.input.metaquestpro
@@ -581,7 +581,7 @@ MonoBehaviour:
   customLoaderName: 
   m_renderMode: 1
   m_latencyOptimization: 0
-  m_autoColorSubmissionMode: 0
+  m_autoColorSubmissionMode: 1
   m_colorSubmissionModes:
     m_List: 0400000000000000
   m_depthSubmissionMode: 0
@@ -591,7 +591,7 @@ MonoBehaviour:
   m_optimizeMultiviewRenderRegions: 0
   m_multiviewRenderRegionsOptimizationMode: 0
   m_hasMigratedMultiviewRenderRegionSetting: 1
-  m_foveatedRenderingApi: 0
+  m_foveatedRenderingApi: 1
   m_useOpenXRPredictedTime: 0
 --- !u!114 &628120351120574099
 MonoBehaviour:
