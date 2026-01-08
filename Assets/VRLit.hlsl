@@ -23,10 +23,12 @@ struct FragmentInput
 	#endif
 };
 
-matrix unity_ObjectToWorld, unity_MatrixVP;
+matrix unity_ObjectToWorld;
 
 #if defined(STEREO_INSTANCING_ON) || defined(STEREO_MULTIVIEW_ON)
 	matrix WorldToClip[2];
+#else
+	matrix WorldToClip;
 #endif
 
 #ifdef STEREO_MULTIVIEW_ON
@@ -50,7 +52,7 @@ FragmentInput Vertex(VertexInput input)
 	#elif defined(STEREO_MULTIVIEW_ON)
 		matrix worldToClip = WorldToClip[gl_ViewID];
     #else
-		matrix worldToClip = unity_MatrixVP;
+		matrix worldToClip = WorldToClip;
     #endif
 
 	output.position = mul(worldToClip, float4(worldPosition, 1.0));

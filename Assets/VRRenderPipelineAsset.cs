@@ -9,8 +9,5 @@ public class VRRenderPipelineAsset : RenderPipelineAsset
 
     public override string renderPipelineShaderTag => string.Empty;
 
-    protected override RenderPipeline CreatePipeline()
-    {
-        return new VRRenderPipeline();
-    }
+    protected override RenderPipeline CreatePipeline() => new VRRenderPipeline();
 }
