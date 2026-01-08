@@ -10,7 +10,7 @@ struct VertexInput
 struct FragmentInput
 {
     float4 position : SV_POSITION;
-	float3 worldDirection : TEXCOORD1;
+	float2 uv : TEXCOORD;
 	
 	#ifdef STEREO_INSTANCING_ON
 		uint viewIndex : SV_RenderTargetArrayIndex;
@@ -25,9 +25,9 @@ struct FragmentInput
 	};
 #endif
 
-TextureCube<float3> _Tex;
+Texture2DArray<float3> Input;
 SamplerState LinearClampSampler;
-float4 FrustumCorners[6];
+float Flip;
 
 FragmentInput Vertex(VertexInput input)
 {
@@ -37,13 +37,16 @@ FragmentInput Vertex(VertexInput input)
 	FragmentInput output;
 	output.position = float3(uv * 2.0 - 1.0, 1.0).xyzz;
 	
+	if (Flip)
+		uv.y = 1 - uv.y;
+		
+	output.uv = uv;
+	
 	uint index = input.vertexId;
 
 	#ifdef STEREO_MULTIVIEW_ON
 		index += 3u * gl_ViewID;
 	#endif
-	
-	output.worldDirection = FrustumCorners[input.vertexId].xyz;
 	
 	#ifdef STEREO_INSTANCING_ON
 		output.viewIndex = input.vertexId / 3u;
@@ -54,5 +57,13 @@ FragmentInput Vertex(VertexInput input)
 
 float4 Fragment(FragmentInput input) : SV_Target
 {
-	return float4(_Tex.Sample(LinearClampSampler, input.worldDirection), 1.0);
+	#ifdef STEREO_MULTIVIEW_ON
+		uint slice = gl_ViewID;
+	#elif defined(STEREO_INSTANCING_ON)
+		uint slice = input.viewIndex;
+	#else
+		uint slice = 0;
+	#endif
+	
+	return float4(Input.Sample(LinearClampSampler, float3(input.uv, slice)), 1.0);
 }

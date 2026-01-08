@@ -12,11 +12,15 @@ public class VRRenderPipeline : RenderPipeline
     private readonly Material xrMirrorViewMaterial;
 #endif
 
+    private readonly Material tonemapMaterial;
+
     public VRRenderPipeline()
     {
 #if UNITY_EDITOR
         xrMirrorViewMaterial = new Material(Shader.Find("Hidden/XRMirrorView")) { hideFlags = HideFlags.HideAndDontSave };
 #endif
+
+        tonemapMaterial = new Material(Shader.Find("Hidden/Tonemap")) { hideFlags = HideFlags.HideAndDontSave };
 
         using (ListPool<XRDisplaySubsystem>.Get(out var displayList))
         {
@@ -29,35 +33,6 @@ public class VRRenderPipeline : RenderPipeline
                 display.textureLayout = XRDisplaySubsystem.TextureLayout.Texture2DArray;
                 display.SetMSAALevel(1);
             }
-        }
-    }
-
-    struct RenderPassData
-    {
-        public Camera camera;
-        public ScriptableCullingParameters cullingParameters;
-        public RenderTargetIdentifier renderTargetIdentifier;
-        public bool requiresMirrorBlit;
-        public Matrix4x4 worldToViewLeft, worldToViewRight, viewToClipLeft, viewToClipRight;
-        public SinglePassStereoMode stereoMode;
-        public uint instanceMultiplier;
-        public string stereoKeyword;
-        public Vector2Int size;
-
-        public RenderPassData(Camera camera, ScriptableCullingParameters cullingParameters, RenderTargetIdentifier renderTargetIdentifier, bool requiresMirrorBlit, Matrix4x4 worldToViewLeft, Matrix4x4 worldToViewRight, Matrix4x4 viewToClipLeft, Matrix4x4 viewToClipRight, SinglePassStereoMode stereoMode, uint instanceMultiplier, string stereoKeyword, Vector2Int size)
-        {
-            this.camera = camera;
-            this.cullingParameters = cullingParameters;
-            this.renderTargetIdentifier = renderTargetIdentifier;
-            this.requiresMirrorBlit = requiresMirrorBlit;
-            this.worldToViewLeft = worldToViewLeft;
-            this.worldToViewRight = worldToViewRight;
-            this.viewToClipLeft = viewToClipLeft;
-            this.viewToClipRight = viewToClipRight;
-            this.stereoMode = stereoMode;
-            this.instanceMultiplier = instanceMultiplier;
-            this.stereoKeyword = stereoKeyword;
-            this.size = size;
         }
     }
 
@@ -93,12 +68,12 @@ public class VRRenderPipeline : RenderPipeline
                                 var stereoKeyword = camera.stereoEnabled ? (SystemInfo.supportsMultiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON") : string.Empty;
                                 var size = new Vector2Int(renderPass.renderTargetScaledWidth, renderPass.renderTargetScaledHeight);
 
-                                renderPassDatas.Add(new(camera, cullingParameters, renderPass.renderTarget, true, leftEye.view, rightEye.view, leftEye.projection, rightEye.projection, stereoMode, instanceMultiplier, stereoKeyword, size));
+                                renderPassDatas.Add(new(camera, cullingParameters, renderPass.renderTarget, true, leftEye.view, rightEye.view, leftEye.projection, rightEye.projection, stereoMode, instanceMultiplier, stereoKeyword, size, renderPass.renderTargetDesc.vrUsage));
                             }
-                            else if(camera.cameraType == CameraType.SceneView)
+                            else if (camera.cameraType == CameraType.SceneView)
                             {
                                 if (camera.TryGetCullingParameters(out var cullingParameters))
-                                    renderPassDatas.Add(new(camera, cullingParameters, BuiltinRenderTextureType.CameraTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, new(camera.pixelWidth, camera.pixelHeight)));
+                                    renderPassDatas.Add(new(camera, cullingParameters, BuiltinRenderTextureType.CameraTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, new(camera.pixelWidth, camera.pixelHeight), VRTextureUsage.None));
                             }
                         }
                     }
@@ -108,7 +83,7 @@ public class VRRenderPipeline : RenderPipeline
                     foreach (var camera in cameras)
                     {
                         if (camera.TryGetCullingParameters(out var cullingParameters))
-                            renderPassDatas.Add(new(camera, cullingParameters, BuiltinRenderTextureType.CameraTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, new(camera.pixelWidth, camera.pixelHeight)));
+                            renderPassDatas.Add(new(camera, cullingParameters, BuiltinRenderTextureType.CameraTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, new(camera.pixelWidth, camera.pixelHeight), VRTextureUsage.None));
                     }
                 }
             }
@@ -122,15 +97,17 @@ public class VRRenderPipeline : RenderPipeline
                     var cullingParameters = pass.cullingParameters;
                     var cullingResults = context.Cull(ref cullingParameters);
 
-                    command.SetRenderTarget(pass.renderTargetIdentifier, 0, CubemapFace.Unknown, -1);
-                    command.ClearRenderTarget(pass.camera.clearFlags != CameraClearFlags.Nothing, pass.camera.clearFlags == CameraClearFlags.SolidColor, pass.camera.backgroundColor);
+                    var cameraTarget = Shader.PropertyToID("CameraTarget");
+                    var cameraTargetDesc = new RenderTextureDescriptor(pass.size.x, pass.size.y, UnityEngine.Experimental.Rendering.GraphicsFormat.B10G11R11_UFloatPack32, 32) { dimension = TextureDimension.Tex2DArray, volumeDepth = 2, vrUsage = pass.vrUsage };
+                    command.GetTemporaryRT(cameraTarget, cameraTargetDesc);
 
-                    var flip = pass.camera.cameraType == CameraType.SceneView;
+                    command.SetRenderTarget(cameraTarget, 0, CubemapFace.Unknown, -1);
+                    command.ClearRenderTarget(pass.camera.clearFlags != CameraClearFlags.Nothing, pass.camera.clearFlags == CameraClearFlags.SolidColor, pass.camera.backgroundColor);
 
                     command.SetGlobalMatrixArray("WorldToClip", new Matrix4x4[2]
                     {
-                        GL.GetGPUProjectionMatrix(pass.viewToClipLeft, flip) * pass.worldToViewLeft,
-                        GL.GetGPUProjectionMatrix(pass.viewToClipRight, flip) * pass.worldToViewRight,
+                        GL.GetGPUProjectionMatrix(pass.viewToClipLeft, true) * pass.worldToViewLeft,
+                        GL.GetGPUProjectionMatrix(pass.viewToClipRight, true) * pass.worldToViewRight,
                     });
 
                     if (!string.IsNullOrEmpty(pass.stereoKeyword))
@@ -141,24 +118,24 @@ public class VRRenderPipeline : RenderPipeline
 
                     command.DrawRendererList(context.CreateRendererList(new RendererListDesc(new ShaderTagId("SRPDefaultUnlit"), cullingResults, pass.camera) { renderQueueRange = RenderQueueRange.opaque }));
 
+                    if (pass.instanceMultiplier != 1u)
+                        command.SetInstanceMultiplier(1u);
+
                     if (pass.camera.clearFlags == CameraClearFlags.Skybox)
                     {
                         var sky = RenderSettings.skybox;
                         if (sky != null)
                         {
-                            static Vector3 GetFrustumCorner(int index, Matrix4x4 worldToView, Matrix4x4 viewToClip, bool flip)
+                            static Vector3 GetFrustumCorner(int index, Matrix4x4 worldToView, Matrix4x4 viewToClip)
                             {
                                 // Fullscreen triangle coordinates in clip space
                                 var clipPosition = index switch
                                 {
-                                    0 => new Vector4(-1, -1, 1, 1),
-                                    1 => new Vector4(3, -1, 1, 1),
-                                    2 => new Vector4(-1, 3, 1, 1),
+                                    0 => new Vector4(-1, 1, 1, 1),
+                                    1 => new Vector4(3, 1, 1, 1),
+                                    2 => new Vector4(-1, -3, 1, 1),
                                     _ => throw new ArgumentOutOfRangeException(nameof(index)),
                                 };
-
-                                if (flip)
-                                    clipPosition.y = -clipPosition.y;
 
                                 // Transform from clip to view space
                                 // Transform from view to camera-relative world space (Since we only want the vector from the view to the corner
@@ -172,23 +149,26 @@ public class VRRenderPipeline : RenderPipeline
 
                             command.SetGlobalVectorArray("FrustumCorners", new Vector4[6]
                             {
-                                GetFrustumCorner(0, pass.worldToViewLeft, pass.viewToClipLeft, flip),
-                                GetFrustumCorner(1, pass.worldToViewLeft, pass.viewToClipLeft, flip),
-                                GetFrustumCorner(2, pass.worldToViewLeft, pass.viewToClipLeft, flip),
-                                GetFrustumCorner(0, pass.worldToViewRight, pass.viewToClipRight, flip),
-                                GetFrustumCorner(1, pass.worldToViewRight, pass.viewToClipRight, flip),
-                                GetFrustumCorner(2, pass.worldToViewRight, pass.viewToClipRight, flip),
+                                GetFrustumCorner(0, pass.worldToViewLeft, pass.viewToClipLeft),
+                                GetFrustumCorner(1, pass.worldToViewLeft, pass.viewToClipLeft),
+                                GetFrustumCorner(2, pass.worldToViewLeft, pass.viewToClipLeft),
+                                GetFrustumCorner(0, pass.worldToViewRight, pass.viewToClipRight),
+                                GetFrustumCorner(1, pass.worldToViewRight, pass.viewToClipRight),
+                                GetFrustumCorner(2, pass.worldToViewRight, pass.viewToClipRight),
                             });
 
                             command.DrawProcedural(Matrix4x4.identity, sky, 0, MeshTopology.Triangles, (int)(3u * pass.instanceMultiplier));
                         }
                     }
 
+                    // Tonemap and output blit
+                    command.SetRenderTarget(pass.renderTargetIdentifier, 0, CubemapFace.Unknown, -1);
+                    command.SetGlobalTexture("Input", cameraTarget);
+                    command.SetGlobalFloat("Flip", pass.camera.cameraType == CameraType.SceneView ? 1f : 0f);
+                    command.DrawProcedural(Matrix4x4.identity, tonemapMaterial, 0, MeshTopology.Triangles, (int)(3u * pass.instanceMultiplier));
+
                     if (!string.IsNullOrEmpty(pass.stereoKeyword))
                         command.DisableShaderKeyword(pass.stereoKeyword);
-
-                    if (pass.instanceMultiplier != 1u)
-                        command.SetInstanceMultiplier(1u);
 
 #if UNITY_EDITOR
                     if (pass.requiresMirrorBlit)
@@ -205,6 +185,37 @@ public class VRRenderPipeline : RenderPipeline
                 context.ExecuteCommandBuffer(command);
                 context.Submit();
             }
+        }
+    }
+
+    struct RenderPassData
+    {
+        public Camera camera;
+        public ScriptableCullingParameters cullingParameters;
+        public RenderTargetIdentifier renderTargetIdentifier;
+        public bool requiresMirrorBlit;
+        public Matrix4x4 worldToViewLeft, worldToViewRight, viewToClipLeft, viewToClipRight;
+        public SinglePassStereoMode stereoMode;
+        public uint instanceMultiplier;
+        public string stereoKeyword;
+        public Vector2Int size;
+        public VRTextureUsage vrUsage;
+
+        public RenderPassData(Camera camera, ScriptableCullingParameters cullingParameters, RenderTargetIdentifier renderTargetIdentifier, bool requiresMirrorBlit, Matrix4x4 worldToViewLeft, Matrix4x4 worldToViewRight, Matrix4x4 viewToClipLeft, Matrix4x4 viewToClipRight, SinglePassStereoMode stereoMode, uint instanceMultiplier, string stereoKeyword, Vector2Int size, VRTextureUsage vrUsage)
+        {
+            this.camera = camera;
+            this.cullingParameters = cullingParameters;
+            this.renderTargetIdentifier = renderTargetIdentifier;
+            this.requiresMirrorBlit = requiresMirrorBlit;
+            this.worldToViewLeft = worldToViewLeft;
+            this.worldToViewRight = worldToViewRight;
+            this.viewToClipLeft = viewToClipLeft;
+            this.viewToClipRight = viewToClipRight;
+            this.stereoMode = stereoMode;
+            this.instanceMultiplier = instanceMultiplier;
+            this.stereoKeyword = stereoKeyword;
+            this.size = size;
+            this.vrUsage = vrUsage;
         }
     }
 }
