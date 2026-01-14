@@ -29,7 +29,30 @@ Texture2DArray<float3> CameraTarget;
 SamplerState LinearClampSampler;
 //float Flip;
 float IsSceneView;
-Texture2DArray<float3> _UnityFBInput0;
+//Texture2D<float3> _UnityFBInput0;
+
+//#define SHADER_API_VULKAN
+//#define UNITY_COMPILER_DXC
+//#define SHADER_STAGE_FRAGMENT
+
+#ifdef SHADER_API_VULKAN
+	#ifdef UNITY_COMPILER_DXC
+		
+		 #ifdef SHADER_STAGE_FRAGMENT
+            [[vk::input_attachment_index(0)]] SubpassInput<float4> hlslcc_fbinput_0
+        #else
+            //declaring dummy resources here so that non-fragment shader stage automatic bindings wouldn't diverge from the fragment shader (important for vulkan)
+            Texture2D dxc_dummy_fbinput_resource0; static float DXC_DummySubpassVariable0 = float(0).xxxx;
+        #endif
+	#else
+		cbuffer hlslcc_SubpassInput_f_0 
+		{
+			float4 hlslcc_fbinput_0;
+		}
+	#endif
+#else
+	Texture2DArray<float3> _UnityFBInput0;
+#endif
 
 FragmentInput Vertex(VertexInput input)
 {
@@ -67,6 +90,11 @@ float4 Fragment(FragmentInput input) : SV_Target
 		uint slice = 0;
 	#endif
 	
-	return float4(_UnityFBInput0[uint3(input.position.xy, slice)], 1.0);
-	return float4(CameraTarget.Sample(LinearClampSampler, float3(input.uv, slice)), 1.0);
+	#ifdef SHADER_API_VULKAN
+		return hlslcc_fbinput_0;
+	#else
+		//return float4(_UnityFBInput0[input.position.xy], 1.0);
+		return float4(_UnityFBInput0[uint3(input.position.xy, slice)], 1.0);
+		//return float4(CameraTarget.Sample(LinearClampSampler, float3(input.uv, slice)), 1.0);
+	#endif
 }

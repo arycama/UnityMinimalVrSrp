@@ -13,10 +13,18 @@ public class NativeRenderPassPipeline : RenderPipeline
     private readonly NativeRenderPassPipelineAsset settings;
     private readonly Material tonemapMaterial;
 
+#if UNITY_EDITOR
+    private readonly Material xrMirrorViewMaterial;
+#endif
+
     public NativeRenderPassPipeline(NativeRenderPassPipelineAsset settings)
     {
         this.settings = settings;
         tonemapMaterial = new Material(Shader.Find("Hidden/Tonemap")) { hideFlags = HideFlags.HideAndDontSave };
+
+#if UNITY_EDITOR
+        xrMirrorViewMaterial = new Material(Shader.Find("Hidden/XRMirrorView")) { hideFlags = HideFlags.HideAndDontSave };
+#endif
 
         using (ListPool<XRDisplaySubsystem>.Get(out var displayList))
         {
@@ -112,28 +120,31 @@ public class NativeRenderPassPipeline : RenderPipeline
                         GL.GetGPUProjectionMatrix(pass.viewToClipRight, flip) * pass.worldToViewRight,
                     });
 
-                    var depthTemp = Shader.PropertyToID("DepthTemp");
-                    var depthTempDesc = new RenderTextureDescriptor(pass.size.x, pass.size.y, RenderTextureFormat.Depth, 32) { dimension = TextureDimension.Tex2DArray, volumeDepth = 2 };
-                    command.GetTemporaryRT(depthTemp, depthTempDesc);
+                    //var identifier = new RenderTargetIdentifier(pass.renderTargetIdentifier, 0, CubemapFace.Unknown, -1);
+                    var volumeDepth = 2;// pass.vrUsage == VRTextureUsage.None ? 1 : 2;
 
-                    var colorTemp = Shader.PropertyToID("ColorTemp");
-                    var colorTempDesc = new RenderTextureDescriptor(pass.size.x, pass.size.y, RenderTextureFormat.RGB111110Float) { dimension = TextureDimension.Tex2DArray, volumeDepth = 2 };
-                    command.GetTemporaryRT(colorTemp, colorTempDesc);
-
-                    var attachments = new NativeArray<AttachmentDescriptor>(2, Allocator.Temp);
+                    var attachments = new NativeArray<AttachmentDescriptor>(3, Allocator.Temp);
                     {
-                        attachments[0] = new(RenderTextureFormat.Depth) { loadAction = RenderBufferLoadAction.Clear, loadStoreTarget = new RenderTargetIdentifier(depthTemp, 0, CubemapFace.Unknown, -1) };
-                        attachments[1] = new(RenderTextureFormat.RGB111110Float) { storeAction = RenderBufferStoreAction.Store, loadStoreTarget = new RenderTargetIdentifier(colorTemp, 0, CubemapFace.Unknown, -1) };
+                        attachments[0] = new(GraphicsFormat.D24_UNorm_S8_UInt) { loadAction = RenderBufferLoadAction.Clear, loadStoreTarget = new RenderTargetIdentifier(BuiltinRenderTextureType.None, 0, CubemapFace.Unknown, -1) };
+                        attachments[1] = new(GraphicsFormat.B10G11R11_UFloatPack32) { loadStoreTarget = new RenderTargetIdentifier(BuiltinRenderTextureType.None, 0, CubemapFace.Unknown, -1) };
+                        attachments[2] = new(GraphicsFormat.R8G8B8A8_SRGB) { storeAction = RenderBufferStoreAction.Store, loadStoreTarget = new RenderTargetIdentifier(pass.renderTargetIdentifier, 0, CubemapFace.Unknown, -1) };
                     }
 
-                    var subPasses = new NativeArray<SubPassDescriptor>(1, Allocator.Temp);
+                    var subPasses = new NativeArray<SubPassDescriptor>(2, Allocator.Temp);
                     {
                         var colorOutputs0 = new AttachmentIndexArray(1);
                         colorOutputs0[0] = 1;
                         subPasses[0] = new SubPassDescriptor() { colorOutputs = colorOutputs0 };
+
+                        var inputs1 = new AttachmentIndexArray(1);
+                        inputs1[0] = 1;
+
+                        var colorOutputs1 = new AttachmentIndexArray(1);
+                        colorOutputs1[0] = 2;
+                        subPasses[1] = new SubPassDescriptor() { colorOutputs = colorOutputs1, inputs = inputs1 };
                     }
 
-                    command.BeginRenderPass(pass.size.x, pass.size.y, 2, 1, attachments, 0, subPasses);
+                    command.BeginRenderPass(pass.size.x, pass.size.y, volumeDepth, 1, attachments, 0, subPasses);
                
                     if (!string.IsNullOrEmpty(pass.stereoKeyword))
                         command.EnableShaderKeyword(pass.stereoKeyword);
@@ -191,18 +202,39 @@ public class NativeRenderPassPipeline : RenderPipeline
                         }
                     }
 
+                    command.NextSubPass();
+
+                    command.SetGlobalFloat("IsSceneView", pass.camera.cameraType == CameraType.SceneView ? 1f : 0f);
+                    command.DrawProcedural(Matrix4x4.identity, tonemapMaterial, 0, MeshTopology.Triangles, (int)(3u * pass.instanceMultiplier));
+
                     if (!string.IsNullOrEmpty(pass.stereoKeyword))
                         command.DisableShaderKeyword(pass.stereoKeyword);
 
                     command.EndRenderPass();
+
+#if UNITY_EDITOR
+                    if (pass.requiresMirrorBlit)
+                    {
+                        context.ExecuteCommandBuffer(command);
+                        command.Clear();
+
+                        // Blit to screen, editor only
+                        command.SetGlobalTexture("Input", pass.renderTargetIdentifier);
+                        command.SetGlobalFloat("RenderMode", (float)XRSettings.gameViewRenderMode);
+                        command.SetRenderTarget(BuiltinRenderTextureType.CameraTarget, 0, CubemapFace.Unknown, -1);
+                        command.DrawProcedural(Matrix4x4.identity, xrMirrorViewMaterial, 0, MeshTopology.Triangles, 3);
+                    }
+#endif
                 }
 
                 context.ExecuteCommandBuffer(command);
 
-                if (context.SubmitForRenderPassValidation())
-                    context.Submit();
-                else
+#if UNITY_EDITOR
+                if (!context.SubmitForRenderPassValidation())
                     Debug.LogError("Render Pass Validation Failed");
+                else
+#endif
+                    context.Submit();
             }
         }
     }

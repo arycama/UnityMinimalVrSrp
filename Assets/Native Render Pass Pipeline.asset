@@ -12,3 +12,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: db4ab99e62618e54fb2e074690d45e95, type: 3}
   m_Name: Native Render Pass Pipeline
   m_EditorClassIdentifier: MinimalVrSrp::NativeRenderPassPipelineAsset
+  <UseRenderPass>k__BackingField: 1
