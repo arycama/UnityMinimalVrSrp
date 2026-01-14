@@ -3,6 +3,21 @@
     #define STEREO_MULTIVIEW_ON
 #endif
 
+//cbuffer ViewData
+//{
+//	matrix WorldToClip[2];
+//	float4 ViewPosition[2];
+//	float3 SunDirection;
+//	float FogDensity;
+//	float3 SunColor;
+//	float Time;
+//	float3 FogColor;
+//	float FrameIndex;
+//	float4 FrustumCorners[6];
+//	float2 ViewSize;
+//	float2 TanHalfFov;
+//};
+
 struct VertexInput
 {
     float3 position : POSITION;

@@ -25,9 +25,11 @@ struct FragmentInput
 	};
 #endif
 
-Texture2DArray<float3> Input;
+Texture2DArray<float3> CameraTarget;
 SamplerState LinearClampSampler;
-float Flip;
+//float Flip;
+float IsSceneView;
+Texture2DArray<float3> _UnityFBInput0;
 
 FragmentInput Vertex(VertexInput input)
 {
@@ -37,7 +39,7 @@ FragmentInput Vertex(VertexInput input)
 	FragmentInput output;
 	output.position = float3(uv * 2.0 - 1.0, 1.0).xyzz;
 	
-	if (Flip)
+	if (IsSceneView /*Flip*/)
 		uv.y = 1 - uv.y;
 		
 	output.uv = uv;
@@ -65,5 +67,6 @@ float4 Fragment(FragmentInput input) : SV_Target
 		uint slice = 0;
 	#endif
 	
-	return float4(Input.Sample(LinearClampSampler, float3(input.uv, slice)), 1.0);
+	return float4(_UnityFBInput0[uint3(input.position.xy, slice)], 1.0);
+	return float4(CameraTarget.Sample(LinearClampSampler, float3(input.uv, slice)), 1.0);
 }

@@ -29,6 +29,21 @@ TextureCube<float3> _Tex;
 SamplerState LinearClampSampler;
 float4 FrustumCorners[6];
 
+//cbuffer ViewData
+//{
+//	matrix WorldToClip[2];
+//	float4 ViewPosition[2];
+//	float3 SunDirection;
+//	float FogDensity;
+//	float3 SunColor;
+//	float Time;
+//	float3 FogColor;
+//	float FrameIndex;
+//	float4 FrustumCorners[6];
+//	float2 ViewSize;
+//	float2 TanHalfFov;
+//};
+
 FragmentInput Vertex(VertexInput input)
 {
 	uint localId = input.vertexId % 3u;
@@ -43,7 +58,7 @@ FragmentInput Vertex(VertexInput input)
 		index += 3u * gl_ViewID;
 	#endif
 	
-	output.worldDirection = FrustumCorners[input.vertexId].xyz;
+	output.worldDirection = FrustumCorners[index].xyz;
 	
 	#ifdef STEREO_INSTANCING_ON
 		output.viewIndex = input.vertexId / 3u;

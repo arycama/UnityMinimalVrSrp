@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
+using Unity.Collections;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Pool;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RendererUtils;
 using UnityEngine.XR;
 
-public class VRRenderPipeline : RenderPipeline
+public class MinimalVrRenderPipeline : RenderPipeline
 {
 #if UNITY_EDITOR
     private readonly Material xrMirrorViewMaterial;
@@ -14,7 +16,7 @@ public class VRRenderPipeline : RenderPipeline
 
     private readonly Material tonemapMaterial;
 
-    public VRRenderPipeline()
+    public MinimalVrRenderPipeline()
     {
 #if UNITY_EDITOR
         xrMirrorViewMaterial = new Material(Shader.Find("Hidden/XRMirrorView")) { hideFlags = HideFlags.HideAndDontSave };
@@ -53,9 +55,18 @@ public class VRRenderPipeline : RenderPipeline
 
                         foreach (var camera in cameras)
                         {
-                            if (camera.cameraType == CameraType.Game)
-                            {
 
+                            if (camera.cameraType == CameraType.SceneView)
+                            {
+                                if (camera.TryGetCullingParameters(out var cullingParameters))
+                                {
+                                    var renderTarget = (RenderTargetIdentifier)(camera.targetTexture == null ? BuiltinRenderTextureType.CameraTarget : camera.targetTexture);
+                                    var size = new Vector2Int(camera.pixelWidth, camera.pixelHeight);
+                                    renderPassDatas.Add(new(camera, cullingParameters, renderTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, size, VRTextureUsage.None, GraphicsFormat.R8G8B8A8_SRGB));
+                                }
+                            }
+                            else if (camera.cameraType == CameraType.Game)
+                            {
                                 display.zNear = Mathf.Min(display.zNear, camera.nearClipPlane);
                                 display.zFar = Mathf.Max(display.zFar, camera.farClipPlane);
                                 display.GetCullingParameters(camera, renderPass.cullingPassIndex, out var cullingParameters);
@@ -68,12 +79,7 @@ public class VRRenderPipeline : RenderPipeline
                                 var stereoKeyword = camera.stereoEnabled ? (SystemInfo.supportsMultiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON") : string.Empty;
                                 var size = new Vector2Int(renderPass.renderTargetScaledWidth, renderPass.renderTargetScaledHeight);
 
-                                renderPassDatas.Add(new(camera, cullingParameters, renderPass.renderTarget, true, leftEye.view, rightEye.view, leftEye.projection, rightEye.projection, stereoMode, instanceMultiplier, stereoKeyword, size, renderPass.renderTargetDesc.vrUsage));
-                            }
-                            else if (camera.cameraType == CameraType.SceneView)
-                            {
-                                if (camera.TryGetCullingParameters(out var cullingParameters))
-                                    renderPassDatas.Add(new(camera, cullingParameters, BuiltinRenderTextureType.CameraTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, new(camera.pixelWidth, camera.pixelHeight), VRTextureUsage.None));
+                                renderPassDatas.Add(new(camera, cullingParameters, renderPass.renderTarget, true, leftEye.view, rightEye.view, leftEye.projection, rightEye.projection, stereoMode, instanceMultiplier, stereoKeyword, size, renderPass.renderTargetDesc.vrUsage, GraphicsFormat.R8G8B8A8_SRGB));
                             }
                         }
                     }
@@ -83,7 +89,12 @@ public class VRRenderPipeline : RenderPipeline
                     foreach (var camera in cameras)
                     {
                         if (camera.TryGetCullingParameters(out var cullingParameters))
-                            renderPassDatas.Add(new(camera, cullingParameters, BuiltinRenderTextureType.CameraTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, new(camera.pixelWidth, camera.pixelHeight), VRTextureUsage.None));
+                        {
+                            var renderTarget = (RenderTargetIdentifier)(camera.targetTexture == null ? BuiltinRenderTextureType.CameraTarget : camera.targetTexture);
+                            var size = new Vector2Int(camera.pixelWidth, camera.pixelHeight);
+                            renderPassDatas.Add(new(camera, cullingParameters, renderTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, size, VRTextureUsage.None, GraphicsFormat.R8G8B8A8_SRGB));
+
+                        }
                     }
                 }
             }
@@ -163,7 +174,7 @@ public class VRRenderPipeline : RenderPipeline
 
                     // Tonemap and output blit
                     command.SetRenderTarget(pass.renderTargetIdentifier, 0, CubemapFace.Unknown, -1);
-                    command.SetGlobalTexture("Input", cameraTarget);
+                    command.SetGlobalTexture("_UnityFBInput0", cameraTarget);
                     command.SetGlobalFloat("Flip", pass.camera.cameraType == CameraType.SceneView ? 1f : 0f);
                     command.DrawProcedural(Matrix4x4.identity, tonemapMaterial, 0, MeshTopology.Triangles, (int)(3u * pass.instanceMultiplier));
 
@@ -185,37 +196,6 @@ public class VRRenderPipeline : RenderPipeline
                 context.ExecuteCommandBuffer(command);
                 context.Submit();
             }
-        }
-    }
-
-    struct RenderPassData
-    {
-        public Camera camera;
-        public ScriptableCullingParameters cullingParameters;
-        public RenderTargetIdentifier renderTargetIdentifier;
-        public bool requiresMirrorBlit;
-        public Matrix4x4 worldToViewLeft, worldToViewRight, viewToClipLeft, viewToClipRight;
-        public SinglePassStereoMode stereoMode;
-        public uint instanceMultiplier;
-        public string stereoKeyword;
-        public Vector2Int size;
-        public VRTextureUsage vrUsage;
-
-        public RenderPassData(Camera camera, ScriptableCullingParameters cullingParameters, RenderTargetIdentifier renderTargetIdentifier, bool requiresMirrorBlit, Matrix4x4 worldToViewLeft, Matrix4x4 worldToViewRight, Matrix4x4 viewToClipLeft, Matrix4x4 viewToClipRight, SinglePassStereoMode stereoMode, uint instanceMultiplier, string stereoKeyword, Vector2Int size, VRTextureUsage vrUsage)
-        {
-            this.camera = camera;
-            this.cullingParameters = cullingParameters;
-            this.renderTargetIdentifier = renderTargetIdentifier;
-            this.requiresMirrorBlit = requiresMirrorBlit;
-            this.worldToViewLeft = worldToViewLeft;
-            this.worldToViewRight = worldToViewRight;
-            this.viewToClipLeft = viewToClipLeft;
-            this.viewToClipRight = viewToClipRight;
-            this.stereoMode = stereoMode;
-            this.instanceMultiplier = instanceMultiplier;
-            this.stereoKeyword = stereoKeyword;
-            this.size = size;
-            this.vrUsage = vrUsage;
         }
     }
 }

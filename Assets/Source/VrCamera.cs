@@ -61,7 +61,7 @@ public class VrCamera : MonoBehaviour
         // var rollRot = new Quaternion(0, 0, sr, cr);  // rotation around Z by roll
 
         var position = Vector3.zero;// offset;
-        var rotation = Quaternion.identity;// new Quaternion(ct * sp, st * cp, -st * sp, ct * cp);
+        var rotation = Quaternion.Identity;// new Quaternion(ct * sp, st * cp, -st * sp, ct * cp);
 
         // XR Input
         using (ListPool<XRNodeState>.Get(out var nodeStates))
