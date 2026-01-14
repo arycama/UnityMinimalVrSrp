@@ -108,10 +108,6 @@ public class NativeRenderPassPipeline : RenderPipeline
                 {
                     var cullingParameters = pass.cullingParameters;
                     var cullingResults = context.Cull(ref cullingParameters);
-                    var camera = pass.camera;
-
-                    context.SetupCameraProperties(camera, true);
-
                     var flip = pass.camera.cameraType == CameraType.SceneView;
 
                     command.SetGlobalMatrixArray("WorldToClip", new Matrix4x4[2]
@@ -120,13 +116,12 @@ public class NativeRenderPassPipeline : RenderPipeline
                         GL.GetGPUProjectionMatrix(pass.viewToClipRight, flip) * pass.worldToViewRight,
                     });
 
-                    //var identifier = new RenderTargetIdentifier(pass.renderTargetIdentifier, 0, CubemapFace.Unknown, -1);
-                    var volumeDepth = 2;// pass.vrUsage == VRTextureUsage.None ? 1 : 2;
+                    var volumeDepth = pass.vrUsage == VRTextureUsage.None ? 1 : 2;
 
                     var attachments = new NativeArray<AttachmentDescriptor>(3, Allocator.Temp);
                     {
-                        attachments[0] = new(GraphicsFormat.D24_UNorm_S8_UInt) { loadAction = RenderBufferLoadAction.Clear, loadStoreTarget = new RenderTargetIdentifier(BuiltinRenderTextureType.None, 0, CubemapFace.Unknown, -1) };
-                        attachments[1] = new(GraphicsFormat.B10G11R11_UFloatPack32) { loadStoreTarget = new RenderTargetIdentifier(BuiltinRenderTextureType.None, 0, CubemapFace.Unknown, -1) };
+                        attachments[0] = new(GraphicsFormat.D32_SFloat_S8_UInt) { loadAction = RenderBufferLoadAction.Clear };
+                        attachments[1] = new(GraphicsFormat.B10G11R11_UFloatPack32);
                         attachments[2] = new(GraphicsFormat.R8G8B8A8_SRGB) { storeAction = RenderBufferStoreAction.Store, loadStoreTarget = new RenderTargetIdentifier(pass.renderTargetIdentifier, 0, CubemapFace.Unknown, -1) };
                     }
 
@@ -152,12 +147,12 @@ public class NativeRenderPassPipeline : RenderPipeline
                     if (pass.instanceMultiplier != 1u)
                         command.SetInstanceMultiplier(pass.instanceMultiplier);
 
-                    command.DrawRendererList(context.CreateRendererList(new RendererListDesc(new ShaderTagId("SRPDefaultUnlit"), cullingResults, camera) { renderQueueRange = RenderQueueRange.opaque }));
+                    command.DrawRendererList(context.CreateRendererList(new RendererListDesc(new ShaderTagId("SRPDefaultUnlit"), cullingResults, pass.camera) { renderQueueRange = RenderQueueRange.opaque }));
 
                     if (pass.instanceMultiplier != 1u)
                         command.SetInstanceMultiplier(1u);
 
-                    if (camera.clearFlags == CameraClearFlags.Skybox)
+                    if (pass.camera.clearFlags == CameraClearFlags.Skybox)
                     {
                         var sky = RenderSettings.skybox;
                         if (sky != null)
@@ -205,7 +200,14 @@ public class NativeRenderPassPipeline : RenderPipeline
                     command.NextSubPass();
 
                     command.SetGlobalFloat("IsSceneView", pass.camera.cameraType == CameraType.SceneView ? 1f : 0f);
+
+                    if (volumeDepth > 1)
+                        command.EnableShaderKeyword("USE_TEXTURE_ARRAY");
+
                     command.DrawProcedural(Matrix4x4.identity, tonemapMaterial, 0, MeshTopology.Triangles, (int)(3u * pass.instanceMultiplier));
+
+                    if (volumeDepth > 1)
+                        command.DisableShaderKeyword("USE_TEXTURE_ARRAY");
 
                     if (!string.IsNullOrEmpty(pass.stereoKeyword))
                         command.DisableShaderKeyword(pass.stereoKeyword);

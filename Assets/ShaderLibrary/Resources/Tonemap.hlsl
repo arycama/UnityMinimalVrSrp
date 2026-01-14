@@ -25,15 +25,8 @@ struct FragmentInput
 	};
 #endif
 
-Texture2DArray<float3> CameraTarget;
 SamplerState LinearClampSampler;
-//float Flip;
 float IsSceneView;
-//Texture2D<float3> _UnityFBInput0;
-
-//#define SHADER_API_VULKAN
-//#define UNITY_COMPILER_DXC
-//#define SHADER_STAGE_FRAGMENT
 
 #ifdef SHADER_API_VULKAN
 	#ifdef UNITY_COMPILER_DXC
@@ -51,8 +44,13 @@ float IsSceneView;
 		}
 	#endif
 #else
-	Texture2DArray<float3> _UnityFBInput0;
+	#ifdef USE_TEXTURE_ARRAY
+		Texture2DArray<float3> _UnityFBInput0;
+	#else
+		Texture2D<float3> _UnityFBInput0;
+	#endif
 #endif
+
 
 FragmentInput Vertex(VertexInput input)
 {
@@ -91,10 +89,18 @@ float4 Fragment(FragmentInput input) : SV_Target
 	#endif
 	
 	#ifdef SHADER_API_VULKAN
-		return hlslcc_fbinput_0;
+		float3 color = hlslcc_fbinput_0.rgb;
 	#else
-		//return float4(_UnityFBInput0[input.position.xy], 1.0);
-		return float4(_UnityFBInput0[uint3(input.position.xy, slice)], 1.0);
-		//return float4(CameraTarget.Sample(LinearClampSampler, float3(input.uv, slice)), 1.0);
+		#ifdef USE_TEXTURE_ARRAY
+			float3 color = _UnityFBInput0[uint3(input.position.xy, slice)];
+		#else
+			float3 color = _UnityFBInput0[input.position.xy];
+		#endif
 	#endif
+	
+	// Simple reinhard tonemap
+	float luminance = dot(color, float3(0.2126729, 0.7151522, 0.0721750));
+	color *= rcp(1.0 + luminance);
+	return float4(color, 1.0);
+
 }
