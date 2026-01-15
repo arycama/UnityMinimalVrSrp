@@ -125,8 +125,8 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
 
                 command.SetGlobalMatrixArray("WorldToClip", new Matrix4x4[2]
                 {
-                    camera.GetStereoGpuViewProjectionMatrix(Camera.StereoscopicEye.Left, flip),
-                    camera.GetStereoGpuViewProjectionMatrix(Camera.StereoscopicEye.Right, flip),
+                    camera.GetStereoGpuViewProjectionMatrix(Camera.StereoscopicEye.Left, true),
+                    camera.GetStereoGpuViewProjectionMatrix(Camera.StereoscopicEye.Right, true),
                 });
 
                 static Vector3 GetFrustumCorner(int index, Matrix4x4 worldToView, Matrix4x4 viewToClip, bool flip)
@@ -142,7 +142,7 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
 
                     if(!flip)
                     {
-                        clipPosition.y = -clipPosition.y;
+                        //clipPosition.y = -clipPosition.y;
                     }
 
                     // Transform from clip to view space
@@ -174,75 +174,96 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
 
         new GenericViewRenderFeature(renderGraph, viewRenderData =>
         {
-            using var pass = renderGraph.AddGenericRenderPass("Render Objects");
-            var camera = viewRenderData.camera;
+            var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2; // TODO: Move into viewRenderData?
+            var depth = renderGraph.GetTexture(viewRenderData.viewSize, GraphicsFormat.D32_SFloat_S8_UInt, volumeDepth, volumeDepth > 1 ? TextureDimension.Tex2DArray : TextureDimension.Tex2D, isScreenTexture: true, clearFlags: RTClearFlags.DepthStencil);
+            var color = renderGraph.GetTexture(viewRenderData.viewSize, GraphicsFormat.B10G11R11_UFloatPack32, volumeDepth, volumeDepth > 1 ? TextureDimension.Tex2DArray : TextureDimension.Tex2D, isScreenTexture: true);
 
+            renderGraph.SetRTHandle<CameraDepth>(depth);
+            renderGraph.SetRTHandle<CameraTarget>(color);
+
+            using var pass = renderGraph.AddObjectRenderPass("Render Objects");
+
+            var camera = viewRenderData.camera;
             var cullingResults = renderGraph.GetResource<CullingResultsData>().cullingResults;
 
-            pass.SetRenderFunction((command, pass) =>
-            {
-                var attachments = new NativeArray<AttachmentDescriptor>(3, Allocator.Temp);
-                {
-                    attachments[0] = new(GraphicsFormat.D32_SFloat_S8_UInt) { loadAction = RenderBufferLoadAction.Clear, storeAction = RenderBufferStoreAction.DontCare };
-                    attachments[1] = new(GraphicsFormat.B10G11R11_UFloatPack32){ loadAction = RenderBufferLoadAction.DontCare, storeAction = RenderBufferStoreAction.DontCare };
-                    attachments[2] = new(GraphicsFormat.R8G8B8A8_SRGB) { storeAction = RenderBufferStoreAction.Store, loadStoreTarget = new RenderTargetIdentifier(viewRenderData.target, 0, CubemapFace.Unknown, -1) };
-                }
+            pass.Initialize("SRPDefaultUnlit", viewRenderData.context, cullingResults, camera, RenderQueueRange.opaque );
 
-                var subPasses = new NativeArray<SubPassDescriptor>(2, Allocator.Temp);
-                {
-                    var colorOutputs0 = new AttachmentIndexArray(1);
-                    colorOutputs0[0] = 1;
-                    subPasses[0] = new SubPassDescriptor() { colorOutputs = colorOutputs0 };
+            pass.WriteDepth(depth, loadAction: RenderBufferLoadAction.DontCare, storeAction: RenderBufferStoreAction.Store);
+            pass.WriteTexture(color, loadAction: RenderBufferLoadAction.DontCare, storeAction: RenderBufferStoreAction.Store);
+            
+            //pass.SetRenderFunction((command, pass) =>
+            //{
+            //    var attachments = new NativeArray<AttachmentDescriptor>(3, Allocator.Temp);
+            //    {
+            //        attachments[0] = new(GraphicsFormat.D32_SFloat_S8_UInt) { loadAction = RenderBufferLoadAction.Clear, storeAction = RenderBufferStoreAction.DontCare };
+            //        attachments[1] = new(GraphicsFormat.B10G11R11_UFloatPack32){ loadAction = RenderBufferLoadAction.DontCare, storeAction = RenderBufferStoreAction.DontCare };
+            //        attachments[2] = new(GraphicsFormat.R8G8B8A8_SRGB) { storeAction = RenderBufferStoreAction.Store, loadStoreTarget = new RenderTargetIdentifier(viewRenderData.target, 0, CubemapFace.Unknown, -1) };
+            //    }
 
-                    var inputs1 = new AttachmentIndexArray(1);
-                    inputs1[0] = 1;
+            //    var subPasses = new NativeArray<SubPassDescriptor>(2, Allocator.Temp);
+            //    {
+            //        var colorOutputs0 = new AttachmentIndexArray(1);
+            //        colorOutputs0[0] = 1;
+            //        subPasses[0] = new SubPassDescriptor() { colorOutputs = colorOutputs0 };
 
-                    var colorOutputs1 = new AttachmentIndexArray(1);
-                    colorOutputs1[0] = 2;
-                    subPasses[1] = new SubPassDescriptor() { colorOutputs = colorOutputs1, inputs = inputs1 };
-                }
+            //        var inputs1 = new AttachmentIndexArray(1);
+            //        inputs1[0] = 1;
 
-                var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2;
-                command.BeginRenderPass(viewRenderData.viewSize.x, viewRenderData.viewSize.y, volumeDepth, 1, attachments, 0, subPasses);
+            //        var colorOutputs1 = new AttachmentIndexArray(1);
+            //        colorOutputs1[0] = 2;
+            //        subPasses[1] = new SubPassDescriptor() { colorOutputs = colorOutputs1, inputs = inputs1 };
+            //    }
 
-                if (viewRenderData.stereoMode != SinglePassStereoMode.None)
-                    command.EnableShaderKeyword(viewRenderData.stereoMode == SinglePassStereoMode.Multiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON");
+            //    command.BeginRenderPass(viewRenderData.viewSize.x, viewRenderData.viewSize.y, volumeDepth, 1, attachments, 0, subPasses);
 
-                if (viewRenderData.stereoMode == SinglePassStereoMode.Instancing)
-                    command.SetInstanceMultiplier(2u);
+            //    if (viewRenderData.stereoMode != SinglePassStereoMode.None)
+            //        command.EnableShaderKeyword(viewRenderData.stereoMode == SinglePassStereoMode.Multiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON");
 
-                command.DrawRendererList(viewRenderData.context.CreateRendererList(new RendererListDesc(new ShaderTagId("SRPDefaultUnlit"), cullingResults, viewRenderData.camera) { renderQueueRange = RenderQueueRange.opaque }));
+            //    if (viewRenderData.stereoMode == SinglePassStereoMode.Instancing)
+            //        command.SetInstanceMultiplier(2u);
 
-                if (viewRenderData.stereoMode == SinglePassStereoMode.Instancing)
-                    command.SetInstanceMultiplier(1u);
-            });
+            //    command.DrawRendererList(viewRenderData.context.CreateRendererList(new RendererListDesc(new ShaderTagId("SRPDefaultUnlit"), cullingResults, viewRenderData.camera) { renderQueueRange = RenderQueueRange.opaque }));
+
+            //    if (viewRenderData.stereoMode == SinglePassStereoMode.Instancing)
+            //        command.SetInstanceMultiplier(1u);
+            //});
         }),
 
         new GenericViewRenderFeature(renderGraph, viewRenderData =>
         {
-           using var pass = renderGraph.AddGenericRenderPass("Render Sky");
+            if (viewRenderData.camera.clearFlags != CameraClearFlags.Skybox || RenderSettings.skybox == null)
+                return;
 
-           pass.SetRenderFunction((command, pass) =>
-           {
-                var instanceMultiplier = viewRenderData.stereoMode == SinglePassStereoMode.Instancing ? 2u : 1u;
-                if (viewRenderData.camera.clearFlags == CameraClearFlags.Skybox && RenderSettings.skybox != null)
-                    command.DrawProcedural(Matrix4x4.identity, RenderSettings.skybox, 0, MeshTopology.Triangles, (int)(3u * instanceMultiplier));
+            var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2; // TODO: Move into viewRenderData?
+            using var pass = renderGraph.AddFullscreenRenderPass("Render Sky");
+            pass.Initialize(RenderSettings.skybox, isStereo: volumeDepth > 1);
 
-                command.NextSubPass();
-           });
+            pass.WriteDepth(renderGraph.GetRTHandle<CameraDepth>());
+            pass.WriteTexture(renderGraph.GetRTHandle<CameraTarget>());
         }),
 
         new GenericViewRenderFeature(renderGraph, viewRenderData =>
         {
             using var pass = renderGraph.AddGenericRenderPass("Tonemap");
 
+            pass.ReadTexture("_UnityFBInput0", renderGraph.GetRTHandle<CameraTarget>());
+
             var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2;
             var instanceMultiplier = viewRenderData.stereoMode == SinglePassStereoMode.Instancing ? 2u : 1u;
 
             pass.SetRenderFunction((command, pass) =>
             {
+                command.SetRenderTarget(viewRenderData.target, 0, CubemapFace.Unknown, -1);
+
                 if (volumeDepth > 1)
                     command.EnableShaderKeyword("USE_TEXTURE_ARRAY");
+
+                command.SetGlobalTexture("_UnityFBInput0", pass.GetRenderTexture(renderGraph.GetRTHandle<CameraTarget>()));
+                command.SetGlobalFloat("IsSceneView", viewRenderData.camera.cameraType == CameraType.SceneView ? 1 : 0);
+                command.SetGlobalVector("Resolution", (Float4)viewRenderData.viewSize);
+
+                if (viewRenderData.stereoMode != SinglePassStereoMode.None)
+                    command.EnableShaderKeyword(viewRenderData.stereoMode == SinglePassStereoMode.Multiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON");
 
                 command.DrawProcedural(Matrix4x4.identity, tonemapMaterial, 0, MeshTopology.Triangles, (int)(3u * instanceMultiplier));
 
@@ -252,7 +273,7 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
                 if (viewRenderData.stereoMode != SinglePassStereoMode.None)
                     command.DisableShaderKeyword(viewRenderData.stereoMode == SinglePassStereoMode.Multiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON");
 
-                command.EndRenderPass();
+                //command.EndRenderPass();
             });
         }),
 

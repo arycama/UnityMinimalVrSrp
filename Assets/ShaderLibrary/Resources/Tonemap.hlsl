@@ -27,6 +27,7 @@ struct FragmentInput
 
 SamplerState LinearClampSampler;
 float IsSceneView;
+float2 Resolution;
 
 #ifdef SHADER_API_VULKAN
 	#ifdef UNITY_COMPILER_DXC
@@ -88,13 +89,17 @@ float4 Fragment(FragmentInput input) : SV_Target
 		uint slice = 0;
 	#endif
 	
+	float2 position = input.position.xy;
+	if (!IsSceneView)
+		position.y = Resolution - input.position.y;
+	
 	#ifdef SHADER_API_VULKAN
 		float3 color = hlslcc_fbinput_0.rgb;
 	#else
 		#ifdef USE_TEXTURE_ARRAY
-			float3 color = _UnityFBInput0[uint3(input.position.xy, slice)];
+			float3 color = _UnityFBInput0[uint3(position.xy, slice)];
 		#else
-			float3 color = _UnityFBInput0[input.position.xy];
+			float3 color = _UnityFBInput0[position.xy];
 		#endif
 	#endif
 	
