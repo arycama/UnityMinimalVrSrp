@@ -29,29 +29,28 @@ SamplerState LinearClampSampler;
 float IsSceneView;
 float2 Resolution;
 
-#ifdef SHADER_API_VULKAN
-	#ifdef UNITY_COMPILER_DXC
+//#ifdef SHADER_API_VULKAN
+//	#ifdef UNITY_COMPILER_DXC
 		
-		 #ifdef SHADER_STAGE_FRAGMENT
-            [[vk::input_attachment_index(0)]] SubpassInput<float4> hlslcc_fbinput_0
-        #else
-            //declaring dummy resources here so that non-fragment shader stage automatic bindings wouldn't diverge from the fragment shader (important for vulkan)
-            Texture2D dxc_dummy_fbinput_resource0; static float DXC_DummySubpassVariable0 = float(0).xxxx;
-        #endif
-	#else
-		cbuffer hlslcc_SubpassInput_f_0 
-		{
-			float4 hlslcc_fbinput_0;
-		}
-	#endif
-#else
+//		 #ifdef SHADER_STAGE_FRAGMENT
+//            [[vk::input_attachment_index(0)]] SubpassInput<float4> hlslcc_fbinput_0
+//        #else
+//            //declaring dummy resources here so that non-fragment shader stage automatic bindings wouldn't diverge from the fragment shader (important for vulkan)
+//            Texture2D dxc_dummy_fbinput_resource0; static float DXC_DummySubpassVariable0 = float(0).xxxx;
+//        #endif
+//	#else
+//		cbuffer hlslcc_SubpassInput_f_0 
+//		{
+//			float4 hlslcc_fbinput_0;
+//		}
+//	#endif
+//#else
 	#ifdef USE_TEXTURE_ARRAY
 		Texture2DArray<float3> _UnityFBInput0;
 	#else
 		Texture2D<float3> _UnityFBInput0;
 	#endif
-#endif
-
+//#endif
 
 FragmentInput Vertex(VertexInput input)
 {
@@ -93,15 +92,15 @@ float4 Fragment(FragmentInput input) : SV_Target
 	if (!IsSceneView)
 		position.y = Resolution - input.position.y;
 	
-	#ifdef SHADER_API_VULKAN
-		float3 color = hlslcc_fbinput_0.rgb;
-	#else
+	//#ifdef SHADER_API_VULKAN
+	//	float3 color = hlslcc_fbinput_0.rgb;
+	//#else
 		#ifdef USE_TEXTURE_ARRAY
 			float3 color = _UnityFBInput0[uint3(position.xy, slice)];
 		#else
 			float3 color = _UnityFBInput0[position.xy];
 		#endif
-	#endif
+	//#endif
 	
 	// Simple reinhard tonemap
 	float luminance = dot(color, float3(0.2126729, 0.7151522, 0.0721750));

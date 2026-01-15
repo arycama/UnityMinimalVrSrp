@@ -175,8 +175,8 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
         new GenericViewRenderFeature(renderGraph, viewRenderData =>
         {
             var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2; // TODO: Move into viewRenderData?
-            var depth = renderGraph.GetTexture(viewRenderData.viewSize, GraphicsFormat.D32_SFloat_S8_UInt, volumeDepth, volumeDepth > 1 ? TextureDimension.Tex2DArray : TextureDimension.Tex2D, isScreenTexture: true, clearFlags: RTClearFlags.DepthStencil);
-            var color = renderGraph.GetTexture(viewRenderData.viewSize, GraphicsFormat.B10G11R11_UFloatPack32, volumeDepth, volumeDepth > 1 ? TextureDimension.Tex2DArray : TextureDimension.Tex2D, isScreenTexture: true);
+            var depth = renderGraph.GetTexture(viewRenderData.viewSize, GraphicsFormat.D32_SFloat_S8_UInt, volumeDepth, volumeDepth > 1 ? TextureDimension.Tex2DArray : TextureDimension.Tex2D, isScreenTexture: true, clearFlags: RTClearFlags.DepthStencil, vrTextureUsage: viewRenderData.vrTextureUsage, isTransient: true);
+            var color = renderGraph.GetTexture(viewRenderData.viewSize, GraphicsFormat.B10G11R11_UFloatPack32, volumeDepth, volumeDepth > 1 ? TextureDimension.Tex2DArray : TextureDimension.Tex2D, isScreenTexture: true, vrTextureUsage: viewRenderData.vrTextureUsage, isTransient: true);
 
             renderGraph.SetRTHandle<CameraDepth>(depth);
             renderGraph.SetRTHandle<CameraTarget>(color);
