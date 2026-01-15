@@ -20,7 +20,7 @@ public class NativeRenderPassPipeline : RenderPipeline
     public NativeRenderPassPipeline(NativeRenderPassPipelineAsset settings)
     {
         this.settings = settings;
-        tonemapMaterial = new Material(Shader.Find("Hidden/Tonemap")) { hideFlags = HideFlags.HideAndDontSave };
+        tonemapMaterial = new Material(Shader.Find("Hidden/SimpleTonemap")) { hideFlags = HideFlags.HideAndDontSave };
 
 #if UNITY_EDITOR
         xrMirrorViewMaterial = new Material(Shader.Find("Hidden/XRMirrorView")) { hideFlags = HideFlags.HideAndDontSave };
@@ -73,8 +73,6 @@ public class NativeRenderPassPipeline : RenderPipeline
                             }
                             else if (camera.cameraType == CameraType.Game)
                             {
-                                display.zNear = Mathf.Min(display.zNear, camera.nearClipPlane);
-                                display.zFar = Mathf.Max(display.zFar, camera.farClipPlane);
                                 display.GetCullingParameters(camera, renderPass.cullingPassIndex, out var cullingParameters);
 
                                 renderPass.GetRenderParameter(camera, 0, out var leftEye);

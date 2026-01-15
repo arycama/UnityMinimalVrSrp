@@ -1,5 +1,23 @@
 {
   "dependencies": {
+    "com.arycama.customrenderpipeline": {
+      "version": "file:com.arycama.customrenderpipeline",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.arycama.unmath": {
+      "version": "file:com.arycama.unmath",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.arycama.webglnoiseunity": {
+      "version": "file:com.arycama.webglnoiseunity",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "com.unity.ai.navigation": {
       "version": "2.0.9",
       "depth": 0,

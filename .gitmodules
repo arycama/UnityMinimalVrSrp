@@ -1,0 +1,9 @@
+[submodule "Packages/com.arycama.customrenderpipeline"]
+	path = Packages/com.arycama.customrenderpipeline
+	url = https://github.com/arycama/customrenderpipeline.git
+[submodule "Packages/com.arycama.unmath"]
+	path = Packages/com.arycama.unmath
+	url = https://github.com/arycama/unmath.git
+[submodule "Packages/com.arycama.webglnoiseunity"]
+	path = Packages/com.arycama.webglnoiseunity
+	url = https://github.com/arycama/webglnoiseunity.git

@@ -15,8 +15,6 @@ namespace PhysicalVR
     {
         private double previousTime;
 
-        public override bool DrawUiOverlay => false;
-
 #if UNITY_EDITOR
         private readonly Material xrMirrorViewMaterial;
 #endif
