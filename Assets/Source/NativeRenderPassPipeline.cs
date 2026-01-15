@@ -51,7 +51,6 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
                 var size = new Int2(camera.pixelWidth, camera.pixelHeight);
                 viewRenderDatas.Add(new(size, camera.nearClipPlane, camera.farClipPlane, camera.TanHalfFov(), camera.transform.WorldRigidTransform(), camera, context, cullingParameters, renderTarget, VRTextureUsage.None, SinglePassStereoMode.None));
                 renderGraph.RtHandleSystem.SetScreenSize(size.x, size.y);
-                //viewRenderDatas.Add(new(camera, cullingParameters, renderTarget, false, camera.worldToCameraMatrix, camera.worldToCameraMatrix, camera.projectionMatrix, camera.projectionMatrix, SinglePassStereoMode.None, 1u, string.Empty, size, VRTextureUsage.None, GraphicsFormat.R8G8B8A8_SRGB));
             }
 
             SubsystemManager.GetSubsystems(displayList);
@@ -93,17 +92,6 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
                             var stereoMode = SystemInfo.supportsMultiview ? SinglePassStereoMode.Multiview : SinglePassStereoMode.Instancing;
                             viewRenderDatas.Add(new(size, camera.nearClipPlane, camera.farClipPlane, camera.TanHalfFov(), transform, camera, context, cullingParameters, renderPass.renderTarget, vrUsage, stereoMode));
                             renderGraph.RtHandleSystem.SetScreenSize(size.x, size.y);
-                            //display.GetCullingParameters(camera, renderPass.cullingPassIndex, out var cullingParameters);
-
-                            //renderPass.GetRenderParameter(camera, 0, out var leftEye);
-                            //renderPass.GetRenderParameter(camera, 1, out var rightEye);
-
-                            //var stereoMode = camera.stereoEnabled ? (SystemInfo.supportsMultiview ? SinglePassStereoMode.Multiview : SinglePassStereoMode.Instancing) : SinglePassStereoMode.None;
-                            //var instanceMultiplier = camera.stereoEnabled && !SystemInfo.supportsMultiview ? 2u : 1u;
-                            //var stereoKeyword = camera.stereoEnabled ? (SystemInfo.supportsMultiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON") : string.Empty;
-                            //var size = new Vector2Int(renderPass.renderTargetScaledWidth, renderPass.renderTargetScaledHeight);
-
-                            //renderPassDatas.Add(new(camera, cullingParameters, renderPass.renderTarget, true, leftEye.view, rightEye.view, leftEye.projection, rightEye.projection, stereoMode, instanceMultiplier, stereoKeyword, size, renderPass.renderTargetDesc.vrUsage, GraphicsFormat.R8G8B8A8_SRGB));
                         }
                     }
                 }
@@ -124,12 +112,14 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
     {
         new GenericViewRenderFeature(renderGraph, viewRenderData =>
         {
-            using var pass = renderGraph.AddGenericRenderPass("Render Camera");
+            using var pass = renderGraph.AddGenericRenderPass("Setup Camera");
+
+            var cullingParameters = viewRenderData.cullingParameters;
+            var cullingResults = viewRenderData.context.Cull(ref cullingParameters);
+            renderGraph.SetResource(new CullingResultsData(cullingResults));
 
             pass.SetRenderFunction((command, pass) =>
             {
-                var cullingParameters = viewRenderData.cullingParameters;
-                var cullingResults = viewRenderData.context.Cull(ref cullingParameters);
                 var camera = viewRenderData.camera;
                 var flip = camera.cameraType == CameraType.SceneView;
 
@@ -179,11 +169,18 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
                     GetFrustumCorner(1, worldToViewRight, viewToClipRight, flip),
                     GetFrustumCorner(2, worldToViewRight, viewToClipRight, flip),
                 });
+            });
+        }),
 
-                command.SetGlobalFloat("IsSceneView", camera.cameraType == CameraType.SceneView ? 1f : 0f);
+        new GenericViewRenderFeature(renderGraph, viewRenderData =>
+        {
+            using var pass = renderGraph.AddGenericRenderPass("Render Objects");
+            var camera = viewRenderData.camera;
 
-                var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2;
+            var cullingResults = renderGraph.GetResource<CullingResultsData>().cullingResults;
 
+            pass.SetRenderFunction((command, pass) =>
+            {
                 var attachments = new NativeArray<AttachmentDescriptor>(3, Allocator.Temp);
                 {
                     attachments[0] = new(GraphicsFormat.D32_SFloat_S8_UInt) { loadAction = RenderBufferLoadAction.Clear, storeAction = RenderBufferStoreAction.DontCare };
@@ -205,6 +202,7 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
                     subPasses[1] = new SubPassDescriptor() { colorOutputs = colorOutputs1, inputs = inputs1 };
                 }
 
+                var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2;
                 command.BeginRenderPass(viewRenderData.viewSize.x, viewRenderData.viewSize.y, volumeDepth, 1, attachments, 0, subPasses);
 
                 if (viewRenderData.stereoMode != SinglePassStereoMode.None)
@@ -217,13 +215,32 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
 
                 if (viewRenderData.stereoMode == SinglePassStereoMode.Instancing)
                     command.SetInstanceMultiplier(1u);
+            });
+        }),
 
+        new GenericViewRenderFeature(renderGraph, viewRenderData =>
+        {
+           using var pass = renderGraph.AddGenericRenderPass("Render Sky");
+
+           pass.SetRenderFunction((command, pass) =>
+           {
                 var instanceMultiplier = viewRenderData.stereoMode == SinglePassStereoMode.Instancing ? 2u : 1u;
-                if (camera.clearFlags == CameraClearFlags.Skybox && RenderSettings.skybox != null)
+                if (viewRenderData.camera.clearFlags == CameraClearFlags.Skybox && RenderSettings.skybox != null)
                     command.DrawProcedural(Matrix4x4.identity, RenderSettings.skybox, 0, MeshTopology.Triangles, (int)(3u * instanceMultiplier));
 
                 command.NextSubPass();
+           });
+        }),
 
+        new GenericViewRenderFeature(renderGraph, viewRenderData =>
+        {
+            using var pass = renderGraph.AddGenericRenderPass("Tonemap");
+
+            var volumeDepth = viewRenderData.vrTextureUsage == VRTextureUsage.None ? 1 : 2;
+            var instanceMultiplier = viewRenderData.stereoMode == SinglePassStereoMode.Instancing ? 2u : 1u;
+
+            pass.SetRenderFunction((command, pass) =>
+            {
                 if (volumeDepth > 1)
                     command.EnableShaderKeyword("USE_TEXTURE_ARRAY");
 
@@ -236,21 +253,28 @@ public class NativeRenderPassPipeline : CustomRenderPipelineBase<NativeRenderPas
                     command.DisableShaderKeyword(viewRenderData.stereoMode == SinglePassStereoMode.Multiview ? "STEREO_MULTIVIEW_ON" : "STEREO_INSTANCING_ON");
 
                 command.EndRenderPass();
+            });
+        }),
 
 #if UNITY_EDITOR
-                if (camera.cameraType == CameraType.Game && viewRenderData.stereoMode != SinglePassStereoMode.None)
-                {
-                    viewRenderData.context.ExecuteCommandBuffer(command);
-                    command.Clear();
+        new GenericViewRenderFeature(renderGraph, viewRenderData =>
+        {
+            if (viewRenderData.camera.cameraType != CameraType.Game || viewRenderData.stereoMode == SinglePassStereoMode.None)
+                return;
 
-                    // Blit to screen, editor only
-                    command.SetGlobalTexture("Input", viewRenderData.target);
-                    command.SetGlobalFloat("RenderMode", (float)XRSettings.gameViewRenderMode);
-                    command.SetRenderTarget(BuiltinRenderTextureType.CameraTarget, 0, CubemapFace.Unknown, -1);
-                    command.DrawProcedural(Matrix4x4.identity, xrMirrorViewMaterial, 0, MeshTopology.Triangles, 3);
-                }
-#endif
+            using var pass = renderGraph.AddGenericRenderPass("XR Mirror View");
+            pass.SetRenderFunction((command, pass) =>
+            {
+                viewRenderData.context.ExecuteCommandBuffer(command);
+                command.Clear();
+
+                // Blit to screen, editor only
+                command.SetGlobalTexture("Input", viewRenderData.target);
+                command.SetGlobalFloat("RenderMode", (float)XRSettings.gameViewRenderMode);
+                command.SetRenderTarget(BuiltinRenderTextureType.CameraTarget, 0, CubemapFace.Unknown, -1);
+                command.DrawProcedural(Matrix4x4.identity, xrMirrorViewMaterial, 0, MeshTopology.Triangles, 3);
             });
         })
+#endif
     };
 }
