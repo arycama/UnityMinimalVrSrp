@@ -85,8 +85,6 @@ namespace PhysicalVR
                             renderGraph.RtHandleSystem.SetScreenSize(renderPass.renderTargetScaledWidth, renderPass.renderTargetScaledHeight);
                             renderGraph.SetResource(new XRDisplaySubsystemData(display));
 
-                            renderGraph.SetResource(new ViewInfo(new(renderPass.renderTargetScaledWidth, renderPass.renderTargetScaledHeight)));
-
                             display.GetCullingParameters(camera, renderPass.cullingPassIndex, out var cullingParameters);
 
                             var size = new Int2(renderPass.renderTargetScaledWidth, renderPass.renderTargetScaledHeight);
